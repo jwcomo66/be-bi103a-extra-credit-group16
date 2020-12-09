@@ -61,88 +61,79 @@ df = df.dropna()
 df = df.sort_values('concentration')
 df.head()
 
-
-def compare_ecdfs(mle_exp, gamma_mle, con):
-	size = 150
-	beta_1 = mle_exp[0]
-	beta_2 = mle_exp[1]
-	b_1 = rg.exponential(1/beta_1, size)
-	b_2 = rg.exponential(1/beta_2, size)
-	t_c =  b_1 + b_2
-
-	title = "eCDF of Catastrophe times for Concentration " + str(con) + " uM"
-
-	p = bokeh.plotting.figure(
-	    width=700,
-	    height=500,
-	    x_axis_label="Catastrophe Time. (s)",
-	    y_axis_label="Cumulative Distribution",
-	    title=title
-	)
-
-	times = df.loc[df['concentration'] == con, 'time']
-	ecdf = ecdf_vals(times)
-
-	p.circle(
-	    x=ecdf[:,0],
-	    y=ecdf[:,1],
-	    color='blue',
-	    legend_label = 'eCDF'
-	)
+rg = np.random.default_rng()
 
 
-	t = np.linspace(0, 250000, 1500)/(1/beta_1)
+def compare_ecdfs(mle_exp, gamma_mle, times):
+    alpha_g = gamma_mle[0]
+    beta_g = gamma_mle[1]
+    beta1_exp = mle_exp[0]
+    beta2_exp = mle_exp[1]
+    
+    gamma_samples = np.array(
+        [rg.gamma(alpha_g, 1 / beta_g, size=len(times)) for _ in range(1000)]
+        )
 
-	if beta_2 - beta_1 != 0:
-	    # The normalized intensity
-	    c = (beta_1 * beta_2)/(beta_2 - beta_1)
-	    cdf = c*((1-np.exp(-beta_1*t))/beta_1 - (1-np.exp(-beta_2*t))/beta_2)
+    exp_samples = np.array(
+        [rg.exponential(1/beta1_exp, size=len(times)) + rg.exponential(1/beta2_exp, size=len(times)) for _ in range(1000)]
+        )
+    
+    p1_gamma = bebi103.viz.predictive_ecdf(
+    samples=gamma_samples, data=times, discrete=True, x_axis_label="n"
+    )
+    p2_gamma = bebi103.viz.predictive_ecdf(
+    samples=gamma_samples, data=times, diff='ecdf', discrete=True, x_axis_label="n"
+    )
+    p1_exp = bebi103.viz.predictive_ecdf(
+    samples=exp_samples, data=times, discrete=True, x_axis_label="n", color="red",
+    )
+    p2_exp = bebi103.viz.predictive_ecdf(
+    samples=exp_samples, data=times, diff='ecdf', discrete=True, x_axis_label="n", color="red",
+    )
 
-	    p.line(
-	        x=t,
-	        y=cdf,
-	        line_width=2,
-	        color = "red",
-	        legend_label = 'Exponential Distribution'
-	    )
-	    
-	p.line(
-	    x=t,
-	    y = gamma.cdf(t, gamma_mle[0], scale = 1/gamma_mle[1]), 
-	    line_width = 2,
-	    color = 'gold', 
-	    legend_label = 'Gamma Distribution'
-	)
-
-	p.legend.location = 'bottom_right'
-	p.legend.click_policy = 'hide'
-	
-	return p
+    return p1_gamma, p2_gamma, p1_exp, p2_exp
 
 
 def show_ecdfs(con):
+    times = df.loc[df['concentration'] == con, 'time']
+    gamma_mle = mle_iid_gamma(times)
+    mle_exp = mle_iid_exp(times)
+    p = compare_ecdfs(mle_exp, gamma_mle, times)
+    return p
 
-	data = df.loc[df['concentration'] == con, 'time']
-	gamma_mle = mle_iid_gamma(data)
-	mle_exp = mle_iid_exp((data))
-	p = compare_ecdfs(mle_exp, gamma_mle, con)
-	return p
 
 def ecdf_widgets():
-	select_con = pn.widgets.Select(name='Select Concentration', options=['7','9','10','12','14'])
-	@pn.depends(
-	    con = select_con.param.value
-	)
-	def plot_interactive_overlay(con):
-	    return show_ecdfs(int(con))
-
-	widgets = pn.Column(
-    pn.Spacer(height=20),
-    select_con
+    select_con = pn.widgets.Select(name='Select Concentration', options=['7','9','10','12','14'])
+    select_dist = pn.widgets.Select(name='Select Distribution', options=['Exponential', 'Gamma'])
+    select_diff = pn.widgets.Select(name='Select Type of Graph', options=['Regular', 'Difference'])
     
-	)
+    @pn.depends(
+        con = select_con.param.value,
+        dist = select_dist.param.value, 
+        diff = select_diff.param.value
+        
+    )
+    
+    def plot_interactive_overlay(con, dist, diff):
+        if diff == 'Regular' and dist == 'Gamma':
+            return show_ecdfs(int(con))[0]
+        elif diff == 'Difference' and dist == 'Gamma':
+            return show_ecdfs(int(con))[1]
+        if diff == 'Regular' and dist == 'Exponential':
+            return show_ecdfs(int(con))[2]
+        if diff == 'Difference' and dist == 'Exponential':
+            return show_ecdfs(int(con))[3]
+    
+    widgets = pn.Column(
+        pn.Spacer(height=20),
+        select_con, 
+        pn.Spacer(height=20), 
+        select_dist, 
+        pn.Spacer(height=20),
+        select_diff
+    
+    )
 
-	row1 = pn.Row(plot_interactive_overlay, pn.Spacer(width=15), widgets)
-	return row1
-
+    row1 = pn.Row(plot_interactive_overlay, pn.Spacer(width=15), widgets)
+    return row1
 
