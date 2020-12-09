@@ -62,7 +62,7 @@ df = df.sort_values('concentration')
 df.head()
 
 
-def compare_ecdfs(mle_exp, gamma_mle):
+def compare_ecdfs(mle_exp, gamma_mle, con):
 	size = 150
 	beta_1 = mle_exp[0]
 	beta_2 = mle_exp[1]
@@ -70,14 +70,29 @@ def compare_ecdfs(mle_exp, gamma_mle):
 	b_2 = rg.exponential(1/beta_2, size)
 	t_c =  b_1 + b_2
 
-	p = iqplot.ecdf(
-	    data= pd.DataFrame(df.loc[df['concentration'] == 12, 'time']),
-	    q = 'time',
-	    kind='colored',
+	title = "eCDF of Catastrophe times for Concentration " + str(con) + " uM"
+
+	p = bokeh.plotting.figure(
+	    width=700,
+	    height=500,
+	    x_axis_label="Catastrophe Time. (s)",
+	    y_axis_label="Cumulative Distribution",
+	    title=title
 	)
 
-	p.legend.location = 'top_left'
+	times = df.loc[df['concentration'] == con, 'time']
+	ecdf = ecdf_vals(times)
+
+	p.circle(
+	    x=ecdf[:,0],
+	    y=ecdf[:,1],
+	    color='blue',
+	    legend_label = 'eCDF'
+	)
+
+
 	t = np.linspace(0, 250000, 1500)/(1/beta_1)
+
 	if beta_2 - beta_1 != 0:
 	    # The normalized intensity
 	    c = (beta_1 * beta_2)/(beta_2 - beta_1)
@@ -87,25 +102,47 @@ def compare_ecdfs(mle_exp, gamma_mle):
 	        x=t,
 	        y=cdf,
 	        line_width=2,
-	        color = "red"
+	        color = "red",
+	        legend_label = 'Exponential Distribution'
 	    )
+	    
 	p.line(
-	        x=t,
-	        y = gamma.cdf(t, gamma_mle[0], scale = 1/gamma_mle[1]), 
-	        line_width = 2,
-	        color = 'yellow'
-	    )
+	    x=t,
+	    y = gamma.cdf(t, gamma_mle[0], scale = 1/gamma_mle[1]), 
+	    line_width = 2,
+	    color = 'gold', 
+	    legend_label = 'Gamma Distribution'
+	)
 
-	bokeh.io.show(p)
-	return 
+	p.legend.location = 'bottom_right'
+	p.legend.click_policy = 'hide'
+	
+	return p
 
-def show_ecdfs(concentration):
 
-	data = pd.DataFrame(df.loc[df['concentration'] == concentration, 'time'])
-	data = data["time"].values
+def show_ecdfs(con):
+
+	data = df.loc[df['concentration'] == con, 'time']
 	gamma_mle = mle_iid_gamma(data)
 	mle_exp = mle_iid_exp((data))
-	compare_ecdfs(mle_exp, gamma_mle)
-	return 
+	p = compare_ecdfs(mle_exp, gamma_mle, con)
+	return p
+
+def ecdf_widgets():
+	select_con = pn.widgets.Select(name='Select Concentration', options=['7','9','10','12','14'])
+	@pn.depends(
+	    con = select_con.param.value
+	)
+	def plot_interactive_overlay(con):
+	    return show_ecdfs(int(con))
+
+	widgets = pn.Column(
+    pn.Spacer(height=20),
+    select_con
+    
+	)
+
+	row1 = pn.Row(plot_interactive_overlay, pn.Spacer(width=15), widgets)
+	return row1
 
 
