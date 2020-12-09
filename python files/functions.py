@@ -21,7 +21,7 @@ import pandas as pd
 import bebi103
 import iqplot
 import scipy
-import scipy.stats as ss
+import scipy.stats as st
 import holoviews as hv
 import holoviews.operation.datashader
 hv.extension('bokeh')
@@ -199,7 +199,7 @@ def lab_conf_int(data):
 	    mean = np.mean(X)
 	    var = 1/(n*(n-1))*np.sum((X-mean)**2)
 	    
-	    conf_int = ss.norm.interval(0.95, loc=mean, scale=var**.5)
+	    conf_int = st.norm.interval(0.95, loc=mean, scale=var**.5)
 	    print("{} confidence interval: {}\n".format(name[i], conf_int))
 	return
 
@@ -265,6 +265,127 @@ def mle_iid_gamma(n):
         return res.x
     else:
         raise RuntimeError('Convergence failed with message', res.message)
+
+def gen_fun_gamma(params, n, size, rg):
+    alpha, beta = params
+    return st.gamma.rvs(alpha, loc = 0, scale = 1/beta, size = size)
+
+labeled_time_data = data[data["labeled"] == True]
+labeled_time_data = data["time to catastrophe (s)"].values
+
+def gamma_bootstrap(data):
+	bs_reps = bebi103.bootstrap.draw_bs_reps_mle(
+    mle_iid_gamma,
+    gen_fun_gamma,
+    data,
+    gen_args=(data, ),
+    size=1000,
+    n_jobs=3,
+    progress_bar=False,
+	)
+	return bs_reps
+
+def gamma_conf(data):
+	bs_reps = gamma_bootstrap(data)
+	return np.percentile(bs_reps, [2.5,97.5], axis = 0)
+
+
+def gamma_dist(data):
+	conf = gamma_conf(data)
+	mle = mle_iid_gamma(data)
+	print('''alpha
+      MLE: {}
+      95% Confidence Interval {}
+          '''.format(mle[0], conf[:, 0]))
+	print('''beta
+      MLE: {}
+      95% Confidence Interval {}
+          '''.format(mle[1], conf[:, 1]))
+	return
+
+
+def log_like_iid_exp(params, t):
+    """Log likelihood for i.i.d. NBinom measurements, parametrized
+    by beta1, beta2."""
+    beta_1, beta_2 = params
+    dB = beta_2 - beta_1
+
+    if beta_1 <= 0 or beta_2 <= 0:
+        return -np.inf
+    if not (dB >= 0):
+        return -np.inf
+    # If beta 1 ~ beta 2, we use a different pdf with just beta_1
+    if np.abs(beta_1 - beta_2) < .0001:
+        pdf = (beta_1**2) * t * np.exp(-beta_1*t)
+    
+    else: 
+        c = (beta_1 * (beta_1 + dB))/dB
+        pdf = c * np.exp(-beta_1*t)*(1-np.exp(-dB*t))
+
+    return np.sum(np.log(pdf))
+
+
+def mle_iid_exp(times):
+    """Perform maximum likelihood estimates for parameters for i.i.d.
+    gamma measurements, parametrized by beta1, beta2"""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        res = scipy.optimize.minimize(
+            fun=lambda params, n: -log_like_iid_exp(params, times),
+            x0=np.array([.01, .011]),
+            args=(times,),
+            method='Powell'
+        )
+
+    if res.success:
+        return res.x
+    else:
+        raise RuntimeError('Convergence failed with message', res.message)
+
+
+
+def gen_fun_exp(params, n, size, rg):
+    beta_1, beta_2 = params
+    b_1 = rg.exponential(1/beta_1, size)
+    b_2 = rg.exponential(1/beta_2, size)
+    return b_1 + b_2
+
+def exp_bootstrap(data):
+	bs_reps = bebi103.bootstrap.draw_bs_reps_mle(
+    mle_iid_exp,
+    gen_fun_exp,
+    data,
+    gen_args=(data, ),
+    size=2000,
+    n_jobs=3,
+    progress_bar=False,
+	)
+	return bs_reps
+
+def exp_conf(data):
+	bs_reps = exp_bootstrap(data)
+	return np.percentile(bs_reps, [2.5,97.5], axis = 0)
+
+def exp_dist(data):
+	conf = exp_conf(data)
+	mle = mle_iid_exp(data)
+	print('''beta_1
+      MLE: {}
+      95% Confidence Interval {}
+          '''.format(mle[0], conf[:, 0]))
+	print('''beta_2
+      MLE: {}
+      95% Confidence Interval {}
+          '''.format(mle[1], conf[:, 1]))
+	return
+
+
+
+
+
+
+
 
 
 
