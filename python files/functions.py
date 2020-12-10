@@ -48,7 +48,7 @@ def ecdf_vals(data):
     return np.asarray([[val, (i+1)/(len(data))] for i, val in enumerate(data) 
                        if i == len(data)-1 or val != data[i+1]])
 
-def plot_hw2():
+def plot_strip_ecdf():
 	df =  pd.read_csv("data/gardner_time_to_catastrophe_dic_tidy.csv")
 	label = df.loc[df["labeled"], "time to catastrophe (s)"]
 	no_label = df.loc[~df["labeled"], "time to catastrophe (s)"]
@@ -72,7 +72,7 @@ def plot_hw2():
 	        legend_label= legend_name[i]
 	    )
 
-	p1 = iqplot.stripbox(
+	p1 = iqplot.strip(
 	    data=df,
 	    x_axis_label = 'Time (s)',
 	    y_axis_label = 'Labeled?',
@@ -81,10 +81,7 @@ def plot_hw2():
 	    q='time to catastrophe (s)',
 	    cats = 'labeled',
 	    jitter=True,
-	    top_level = "box",
-	    whisker_kwargs=dict(line_color='#00000f', line_width=.8),
-	    box_kwargs=dict(line_color='#00000f', line_width=.8),
-	    median_kwargs=dict(line_color='#00000f', line_width=.8)
+        title="Labeling of tubulin",
 	)
 
 
@@ -141,6 +138,44 @@ def run_hw6():
 	d_f = data[data["labeled"] == False]
 	return
 
+def plot_ecdf_conf(data):
+    p = iqplot.ecdf(
+        data = data,
+        q = "time to catastrophe (s)",
+        cats = ["labeled"],
+        conf_int = True)
+    bokeh.io.show(p)
+    
+# Construct summaries for confidence interval plot
+def plot_conf_int(data):
+    '''Construct 95% Confidence Intervals and Plot'''
+    from bokeh.plotting import figure
+    
+    d_t = data[data["labeled"] == True]
+    d_f = data[data["labeled"] == False]
+    
+    label = np.array(d_t["time to catastrophe (s)"])
+    no_label = np.array(d_f["time to catastrophe (s)"])
+    
+    # Labeled
+    bs_reps_mean = draw_bs_reps_mean(np.array(d_t["time to catastrophe (s)"]), size=10000)
+    # 95% confidence intervals
+    mean_conf_int_labeled = np.percentile(bs_reps_mean, [2.5, 97.5])
+    
+    # Unlabeled
+    bs_reps_mean = draw_bs_reps_mean(np.array(d_f["time to catastrophe (s)"]), size=10000)
+    # 95% confidence intervals
+    mean_conf_int_unlabeled = np.percentile(bs_reps_mean, [2.5, 97.5])
+    
+    summaries = [
+        dict(estimate=np.mean(label), conf_int=mean_conf_int_labeled, label="labeled"),
+        dict(
+            estimate=np.mean(no_label), conf_int=mean_conf_int_unlabeled, label="unlabeled"
+        ),
+    ]
+    
+    bokeh.io.show(bebi103.viz.confints(summaries))
+
 def conf_ints_labeled(data):
 	'''Compute the confidence intervals for the labeled and unlabeled tubulin
 	   and print them out. Uses nonparametric bootstrapping '''
@@ -185,6 +220,32 @@ def find_pval(data):
 	print('p-value =', p_val)
 	return 
 
+def plot_conf_int_theor(data):
+    '''Construct 95% Confidence Intervals and Plot'''
+    d_t = data[data["labeled"] == True]
+    d_f = data[data["labeled"] == False]
+    
+    label = np.array(d_t["time to catastrophe (s)"])
+    no_label = np.array(d_f["time to catastrophe (s)"])
+
+    mean_conf_int = []
+    dat = [label, no_label]
+    for i in range(2):
+        X = dat[i]
+        n = X.size
+        mean = np.mean(X)
+        var = 1/(n*(n-1))*np.sum((X-mean)**2)
+
+        mean_conf_int += [st.norm.interval(0.95, loc=mean, scale=var**.5)]
+    
+    summaries = [
+        dict(estimate=np.mean(label), conf_int=mean_conf_int[0], label="labeled"),
+        dict(
+            estimate=np.mean(no_label), conf_int=mean_conf_int[1], label="unlabeled"
+        ),
+    ]
+    
+    bokeh.io.show(bebi103.viz.confints(summaries))
 
 def lab_conf_int(data):
 	d_t = data[data["labeled"] == True]
@@ -235,6 +296,58 @@ def ecdf_bounds(data):
 	bokeh.io.show(p)
 	return  
 
+def ecdf_bounds_labeled(data):
+    d_t = data[data["labeled"] == True]
+    
+    p = iqplot.ecdf(
+        data = d_t,
+        q = "time to catastrophe (s)",
+        cats = ["labeled"],
+        conf_int = True,
+        title="Labeled tubulin"
+        )
+    
+    label = np.array(d_t["time to catastrophe (s)"])
+    
+    X = np.linspace(0, 2000, 200)
+    a = .05
+    n = label.size
+    eps = np.sqrt((1/(2*n)*np.log(2/a)))
+
+    y_min = np.array([max(0, ecdf(x,label) - eps) for x in X])
+    y_max = np.array([min(1, ecdf(x,label) + eps) for x in X])
+    p.line(x = X, y = y_min)
+    p.line(x = X, y = y_max)
+
+    bokeh.io.show(p)
+    return  
+
+def ecdf_bounds_unlabeled(data):
+    d_f = data[data["labeled"] == False]
+    
+    p = iqplot.ecdf(
+        data = d_f,
+        q = "time to catastrophe (s)",
+        cats = ["labeled"],
+        conf_int = True,
+        title="Unlabeled tubulin",
+        palette=["orange"],
+    )
+    
+    no_label = np.array(d_f["time to catastrophe (s)"])
+    X = np.linspace(0, 2000, 200)
+    a = .05
+    n = no_label.size
+    eps = np.sqrt((1/(2*n)*np.log(2/a)))
+
+    y_min = np.array([max(0, ecdf(x,no_label) - eps) for x in X])
+    y_max = np.array([min(1, ecdf(x,no_label) + eps) for x in X])
+    p.line(x = X, y = y_min, color = "orange")
+    p.line(x = X, y = y_max, color = "orange")
+
+    bokeh.io.show(p)
+    return   
+
 
 # Code from 8.2
 def log_like_iid_gamma(params, n):
@@ -265,6 +378,40 @@ def mle_iid_gamma(n):
         return res.x
     else:
         raise RuntimeError('Convergence failed with message', res.message)
+        
+def plot_ecdf_gamma(data):
+    
+    t = data.loc[data['labeled'], 'time to catastrophe (s)'].values 
+    mle = mle_iid_gamma(t)
+    
+    bs_reps = bebi103.bootstrap.draw_bs_reps_mle(
+        mle_iid_gamma,
+        gen_fun_gamma,
+        t,
+        gen_args=(t, ),
+        size=1000,
+        n_jobs=3,
+        progress_bar=True,
+    )
+
+    conf = np.percentile(bs_reps, [2.5, 97.5], axis=0)
+    
+    p = iqplot.ecdf(t, q='t (s)', conf_int=True)
+
+    t_theor = np.linspace(0, 2000, 200)
+    cdf = st.gamma.cdf(t_theor, mle[0], loc=0, scale=1/mle[1])
+    p.line(t_theor, cdf, line_width=2, color='orange')
+
+    bokeh.io.show(p)
+    
+    print('''alpha
+        MLE: {}
+        95% Confidence Interval {}
+          '''.format(mle[0], conf[:, 0]))
+    print('''beta
+        MLE: {}
+        95% Confidence Interval {}
+              '''.format(mle[1], conf[:, 1]))
 
 def gen_fun_gamma(params, n, size, rg):
     alpha, beta = params
@@ -379,6 +526,40 @@ def exp_dist(data):
       95% Confidence Interval {}
           '''.format(mle[1], conf[:, 1]))
 	return
+
+def plot_ecdf_exp(data):
+    
+    t = data.loc[data['labeled'], 'time to catastrophe (s)'].values 
+    mle = mle_iid_exp(t)
+    
+    bs_reps = bebi103.bootstrap.draw_bs_reps_mle(
+        mle_iid_exp,
+        gen_fun_exp,
+        t,
+        gen_args=(t, ),
+        size=1000,
+        n_jobs=3,
+        progress_bar=True,
+    )
+
+    conf = np.percentile(bs_reps, [2.5, 97.5], axis=0)
+    
+    p = iqplot.ecdf(t, q='t (s)', conf_int=True)
+
+    t_theor = np.linspace(0, 2000, 200)
+    cdf = st.gamma.cdf(t_theor, 2, loc=0, scale=1/mle[1])
+    p.line(t_theor, cdf, line_width=2, color='orange')
+
+    bokeh.io.show(p)
+    
+    print('''alpha
+        MLE: {}
+        95% Confidence Interval {}
+          '''.format(mle[0], conf[:, 0]))
+    print('''beta
+        MLE: {}
+        95% Confidence Interval {}
+              '''.format(mle[1], conf[:, 1]))
 
 
 
